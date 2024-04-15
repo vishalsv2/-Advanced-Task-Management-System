@@ -1,11 +1,13 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
+from plyer import notification  # type: ignore # For desktop notifications
 
 # Connect to the SQLite database
 conn = sqlite3.connect("tasks.db")
 cursor = conn.cursor()
 
-# Define the tasks table schema
+
+# Define the tasks table schema with the recurring column
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY,
@@ -15,6 +17,9 @@ cursor.execute("""
         priority INTEGER,
         tags TEXT,
         completed INTEGER DEFAULT 0,
+        recurring INTEGER DEFAULT 0,  -- Flag for recurring tasks
+        recurrence_interval TEXT,     -- Interval for recurrence (e.g., daily, weekly)
+        last_completed DATE,          -- Last completed date for recurring tasks
         categories TEXT,
         notes TEXT
     )
@@ -27,22 +32,37 @@ def add_task():
     due_date_str = input("Enter due date (YYYY-MM-DD): ")
     priority = input("Enter priority (1: Low, 2: Medium, 3: High): ")
     tags = input("Enter tags (comma-separated): ")
+    is_recurring = input("Is this a recurring task? (0: No, 1: Yes): ")
+    recurrence_interval = None
+    if is_recurring == "1":
+        recurrence_interval = input("Enter recurrence interval (daily, weekly, monthly): ")
 
     try:
         due_date = datetime.strptime(due_date_str, "%Y-%m-%d").date()
         priority = int(priority)
-        if priority not in [1, 2, 3]:
+        is_recurring = int(is_recurring)
+        if priority not in [1, 2, 3] or is_recurring not in [0, 1]:
             raise ValueError
     except ValueError:
         print("Invalid input. Please provide valid data.")
         return
 
     cursor.execute("""
-        INSERT INTO tasks (title, description, due_date, priority, tags)
-        VALUES (?, ?, ?, ?, ?)
-    """, (title, description, due_date, priority, tags))
+        INSERT INTO tasks (title, description, due_date, priority, tags, recurring, recurrence_interval)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (title, description, due_date, priority, tags, is_recurring, recurrence_interval))
     conn.commit()
     print("Task added successfully!")
+
+def notify_upcoming_tasks():
+    cursor.execute("SELECT * FROM tasks WHERE due_date <= DATE('now', '+1 day')")
+    upcoming_tasks = cursor.fetchall()
+    for task in upcoming_tasks:
+        notification_title = f"Upcoming Task: {task[1]}"
+        notification_message = f"Due Date: {task[3]}"
+        notification.notify(title=notification_title, message=notification_message)
+
+
 
 
 def edit_task():
@@ -137,7 +157,7 @@ def search_tasks(keyword):
             print(f"Task {task[0]}: {task[1]} (Due: {task[3]}, Priority: {task[4]})")
 
 def main():
-    
+    notify_upcoming_tasks()  # Check for upcoming tasks and notify
     while True:
         print("\nTask Manager Menu:")
         print("1. Add a new task")
